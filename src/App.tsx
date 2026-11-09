@@ -40,12 +40,18 @@ function filtersForRoute(route: string): Partial<FilterParams> | null {
 }
 
 export default function App() {
-  // Live data from Supabase. Until .env is filled in, the demo seed data is shown instead.
+  // Live data from Supabase. The demo cars only appear on your own computer (npm run dev) before .env is filled in.
+  // On the live site, a missing connection shows a clear message instead of fake cars.
+  const showDemo = !isSupabaseConfigured && import.meta.env.DEV;
   const [listings, setListings] = useState<CarListing[]>(() =>
-    isSupabaseConfigured ? [] : INITIAL_CAR_LISTINGS.map((l) => ({ ...l, seller: BUSINESS_SELLER }))
+    showDemo ? INITIAL_CAR_LISTINGS.map((l) => ({ ...l, seller: BUSINESS_SELLER })) : []
   );
   const [listingsLoading, setListingsLoading] = useState(isSupabaseConfigured);
-  const [listingsError, setListingsError] = useState('');
+  const [listingsError, setListingsError] = useState(
+    !isSupabaseConfigured && !import.meta.env.DEV
+      ? 'This site is not connected to Supabase (missing VITE_SUPABASE_URL or VITE_SUPABASE_PUBLISHABLE_KEY in the Cloudflare variables).'
+      : ''
+  );
 
   useEffect(() => {
     if (!isSupabaseConfigured) return;

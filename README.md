@@ -26,7 +26,7 @@ Hosted as a static site on Cloudflare Pages.
    select id from auth.users where email = 'you@example.com';
    ```
 5. (Optional) Uncomment the test car at the bottom of that file and run it to confirm the connection.
-6. Project Settings -> API: copy the Project URL and the anon public key.
+6. Project Settings -> API: copy the Project URL and the publishable key (older projects: anon public key).
 
 ## 2. Run locally
 ```bash
@@ -40,7 +40,8 @@ Logo: `public/assets/emkron-logo.png` (already included).
 1. Push this folder to a GitHub repo.
 2. Cloudflare dashboard -> Workers & Pages -> Create -> Pages -> Connect to Git.
 3. Build command: `npm run build`   Output directory: `dist`
-4. Settings -> Variables: add `VITE_SUPABASE_URL`, `VITE_SUPABASE_ANON_KEY` and (optional) `VITE_BUSINESS_LOCATION`.
-5. Deploy. `.node-version` makes Cloudflare use Node 22, which Vite needs.
+4. Settings -> Variables: add `VITE_SUPABASE_URL`, `VITE_SUPABASE_PUBLISHABLE_KEY` and (optional) `VITE_BUSINESS_LOCATION`.
+5. Variables are baked in when the site is built, so add them for the **Production** environment *before* deploying, and redeploy after changing them.
+6. Deploy. `.node-version` makes Cloudflare use Node 22, which Vite needs.
 
-The anon key is meant to be public; Row Level Security in `schema.sql` protects the data. Never put the `service_role` key in this project.
+The publishable key is meant to be public; Row Level Security in `schema.sql` protects the data. Never put the `service_role` key in this project.
