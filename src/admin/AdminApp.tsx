@@ -1,5 +1,4 @@
 import { useEffect, useState } from 'react';
-import type { Session } from '@supabase/supabase-js';
 import { LogOut } from 'lucide-react';
 import { isSupabaseConfigured, supabase } from '../lib/supabase';
 import { AdminLogin } from './AdminLogin';
@@ -9,7 +8,9 @@ import { CarForm } from './CarForm';
 type View = { name: 'list' } | { name: 'form'; id?: string };
 
 export default function AdminApp() {
-  const [session, setSession] = useState<Session | null>(null);
+  // Only the user's id matters here. Supabase re-sends the login event every time the tab regains focus
+  // (and on token refresh); storing the id means those repeats change nothing and the page isn't rebuilt.
+  const [userId, setUserId] = useState<string | null>(null);
   const [isAdmin, setIsAdmin] = useState(false);
   const [checking, setChecking] = useState(true);
   const [view, setView] = useState<View>({ name: 'list' });
@@ -27,22 +28,22 @@ export default function AdminApp() {
   useEffect(() => {
     if (!isSupabaseConfigured) { setChecking(false); return; }
     supabase.auth.getSession().then(({ data }) => {
-      setSession(data.session);
+      setUserId(data.session?.user.id ?? null);
       if (!data.session) setChecking(false);
     });
     const { data: sub } = supabase.auth.onAuthStateChange((_e, s) => {
-      setSession(s);
+      setUserId(s?.user.id ?? null);
       if (!s) { setIsAdmin(false); setChecking(false); }
     });
     return () => sub.subscription.unsubscribe();
   }, []);
 
   useEffect(() => {
-    if (!session) return;
+    if (!userId) return;
     setChecking(true);
-    supabase.from('admins').select('user_id').eq('user_id', session.user.id).maybeSingle()
+    supabase.from('admins').select('user_id').eq('user_id', userId).maybeSingle()
       .then(({ data }) => { setIsAdmin(Boolean(data)); setChecking(false); });
-  }, [session]);
+  }, [userId]);
 
   const signIn = async (email: string, password: string) => {
     const { error } = await supabase.auth.signInWithPassword({ email, password });
@@ -59,8 +60,8 @@ export default function AdminApp() {
     );
   } else if (checking) {
     body = <div className="py-24 text-center text-slate-500 font-medium">Loading...</div>;
-  } else if (!session || !isAdmin) {
-    body = <AdminLogin onSignIn={signIn} notAdmin={Boolean(session && !isAdmin)} onSignOut={signOut} />;
+  } else if (!userId || !isAdmin) {
+    body = <AdminLogin onSignIn={signIn} notAdmin={Boolean(userId && !isAdmin)} onSignOut={signOut} />;
   } else if (view.name === 'form') {
     body = <CarForm key={view.id || 'new'} editId={view.id} onDone={() => setView({ name: 'list' })} />;
   } else {
@@ -75,7 +76,7 @@ export default function AdminApp() {
             <img src="/assets/emkron-logo.png" alt="Emkron Motors" className="h-10 w-auto object-contain" />
             <span className="text-[11px] font-extrabold uppercase tracking-wider text-slate-400 border border-slate-200 rounded-md px-2 py-0.5">Admin</span>
           </a>
-          {session && isAdmin && (
+          {userId && isAdmin && (
             <button onClick={signOut} className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl border border-slate-200 text-xs font-bold text-slate-600 hover:bg-slate-50 transition cursor-pointer">
               <LogOut className="w-4 h-4" /> Sign out
             </button>

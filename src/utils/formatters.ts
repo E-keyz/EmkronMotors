@@ -224,6 +224,6 @@ export function generateWhatsAppLink(
     cleanPhone = '234' + cleanPhone;
   }
 
-  const message = `Hello, I saw your "${listingTitle}" listed for ${formatNaira(price)} on Emkron Motors (Drive with confidence). Is it still available? I would like to schedule an inspection.`;
+  const message = `Hello, I saw your "${listingTitle}" listed for ${formatNaira(price)} on Emkron Motors (Drive with confidence). Is it still available? I would like to schedule an inspection.${listingUrl ? `\n\n${listingUrl}` : ''}`;
   return `https://wa.me/${cleanPhone}?text=${encodeURIComponent(message)}`;
 }

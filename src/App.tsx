@@ -7,6 +7,38 @@ import { CarListing, FilterParams } from './types';
 import { BUSINESS_SELLER, fetchListings } from './lib/listings';
 import { isSupabaseConfigured } from './lib/supabase';
 
+/** "/" and trailing slashes map to the main listing page. */
+const normalizePath = (p: string) => {
+  const clean = p.replace(/\/+$/, '') || '/';
+  return clean === '/' ? '/cars' : clean;
+};
+
+/**
+ * Which filters a URL stands for. Returns null for a single-car URL
+ * (/cars/<car-slug>) so the browse filters stay as they were.
+ */
+function filtersForRoute(route: string): Partial<FilterParams> | null {
+  const cleared: Partial<FilterParams> = { brand: '', state: '', category: '', page: 1 };
+  if (route === '/cars') return { ...cleared, query: '' };
+
+  let m = route.match(/^\/listings\/category\/([^/]+)$/);
+  if (m) {
+    const cat = BODY_CATEGORIES.find((c) => c.name.toLowerCase() === m![1].toLowerCase());
+    return cat ? { ...cleared, category: cat.name } : cleared;
+  }
+  m = route.match(/^\/cars\/in\/([^/]+)$/);
+  if (m) {
+    const st = NIGERIAN_STATES.find((x) => x.slug === m![1]);
+    return st ? { ...cleared, state: st.name } : cleared;
+  }
+  m = route.match(/^\/cars\/([^/]+)$/);
+  if (m) {
+    const brand = POPULAR_BRANDS.find((b) => b.slug === m![1]);
+    return brand ? { ...cleared, brand: brand.name } : null;
+  }
+  return cleared;
+}
+
 export default function App() {
   // Live data from Supabase. Until .env is filled in, the demo seed data is shown instead.
   const [listings, setListings] = useState<CarListing[]>(() =>
@@ -23,9 +55,8 @@ export default function App() {
       .finally(() => setListingsLoading(false));
   }, []);
 
-  // Routing state
-  const [currentRoute, setCurrentRoute] = useState<string>('/cars');
-  const [selectedCar, setSelectedCar] = useState<CarListing | null>(null);
+  // Routing: the address bar is the source of truth, so refresh, back/forward and shared links all work.
+  const [currentRoute, setCurrentRoute] = useState<string>(() => normalizePath(window.location.pathname));
 
   // Filters state
   const [filters, setFilters] = useState<FilterParams>({
@@ -55,60 +86,45 @@ export default function App() {
     return undefined;
   }, [filters]);
 
-  // Handle URL sync on mount and state changes
+  // Browser back/forward buttons
   useEffect(() => {
-    // If route matches /cars/in/:state or /cars/:brand
-    const path = window.location.pathname;
-    if (path.startsWith('/cars/in/')) {
-      const stateSlug = path.replace('/cars/in/', '').replace(/\/$/, '');
-      const stateObj = NIGERIAN_STATES.find(s => s.slug === stateSlug);
-      if (stateObj) {
-        setFilters(f => ({ ...f, state: stateObj.name }));
-        setCurrentRoute(path);
-      }
-    } else if (path.startsWith('/listings/category/')) {
-      const catSlug = path.replace('/listings/category/', '').replace(/\/$/, '');
-      const catObj = BODY_CATEGORIES.find(c => c.name.toLowerCase() === catSlug.toLowerCase());
-      if (catObj) {
-        setFilters(f => ({ ...f, category: catObj.name }));
-        setCurrentRoute(path);
-      }
-    } else if (path.startsWith('/cars/') && path !== '/cars' && path !== '/cars/') {
-      const brandSlug = path.replace('/cars/', '').replace(/\/$/, '');
-      const brandObj = POPULAR_BRANDS.find(b => b.slug === brandSlug);
-      if (brandObj) {
-        setFilters(f => ({ ...f, brand: brandObj.name }));
-        setCurrentRoute(path);
-      }
-    }
+    const onPop = () => setCurrentRoute(normalizePath(window.location.pathname));
+    window.addEventListener('popstate', onPop);
+    return () => window.removeEventListener('popstate', onPop);
   }, []);
 
+  // Apply the filters a URL stands for (brand / state / body-type pages)
+  useEffect(() => {
+    const f = filtersForRoute(currentRoute);
+    if (f) setFilters((prev) => ({ ...prev, ...f }));
+  }, [currentRoute]);
+
   const navigateTo = (route: string) => {
-    setCurrentRoute(route);
-    setSelectedCar(null);
-    window.scrollTo({ top: 0, behavior: 'smooth' });
-
-    // Update filters according to preset SEO route
-    if (route === '/cars') {
-      setFilters(f => ({ ...f, brand: '', state: '', category: '', query: '', page: 1 }));
-    } else if (route === '/cars/in/lagos') {
-      setFilters(f => ({ ...f, state: 'Lagos', brand: '', category: '', page: 1 }));
-    } else if (route === '/cars/in/abuja') {
-      setFilters(f => ({ ...f, state: 'Abuja (FCT)', brand: '', category: '', page: 1 }));
-    } else if (route === '/cars/toyota') {
-      setFilters(f => ({ ...f, brand: 'Toyota', state: '', category: '', page: 1 }));
-    } else if (route === '/cars/mercedes-benz') {
-      setFilters(f => ({ ...f, brand: 'Mercedes-Benz', state: '', category: '', page: 1 }));
-    } else if (route === '/listings/category/suv') {
-      setFilters(f => ({ ...f, category: 'SUV', state: '', brand: '', page: 1 }));
-    }
-  };
-
-  const handleSelectCar = (car: CarListing) => {
-    setSelectedCar(car);
-    setCurrentRoute(`/cars/${car.slug}`);
+    const next = normalizePath(route);
+    if (window.location.pathname !== next) window.history.pushState({ app: true }, '', next);
+    setCurrentRoute(next);
     window.scrollTo({ top: 0, behavior: 'smooth' });
   };
+
+  const handleSelectCar = (car: CarListing) => navigateTo(`/cars/${car.slug}`);
+
+  // /cars/<car-slug> (anything under /cars/ that isn't a brand page)
+  const carSlug = useMemo(() => {
+    const m = currentRoute.match(/^\/cars\/([^/]+)$/);
+    return m && !POPULAR_BRANDS.some((b) => b.slug === m[1]) ? m[1] : null;
+  }, [currentRoute]);
+
+  const selectedCar = useMemo(
+    () => (carSlug ? listings.find((l) => l.slug === carSlug || l.id === carSlug) ?? null : null),
+    [carSlug, listings]
+  );
+
+  // Page title for the browser tab and shared links
+  useEffect(() => {
+    document.title = selectedCar
+      ? `${selectedCar.title} | Emkron Motors`
+      : 'Emkron Motors | Drive with confidence';
+  }, [selectedCar]);
 
   // Similar cars for detail view
   const similarCars = useMemo(() => {
@@ -137,14 +153,22 @@ export default function App() {
           <div className="max-w-7xl mx-auto px-4 py-24 text-center text-red-600 font-medium">
             Couldn't load cars: {listingsError}
           </div>
+        ) : carSlug && !selectedCar ? (
+          <div className="max-w-xl mx-auto px-4 py-24 text-center">
+            <h1 className="text-2xl font-extrabold text-slate-900">This car is no longer listed</h1>
+            <p className="text-slate-500 font-medium mt-2">It may have been sold or removed. See what's available now.</p>
+            <button
+              onClick={() => navigateTo('/cars')}
+              className="mt-6 px-5 py-3 rounded-2xl bg-emerald-600 hover:bg-emerald-700 text-white text-sm font-extrabold shadow-md shadow-emerald-600/20 transition cursor-pointer"
+            >
+              Browse all cars
+            </button>
+          </div>
         ) : selectedCar ? (
           <DetailView
             car={selectedCar}
             similarCars={similarCars}
-            onBack={() => {
-              setSelectedCar(null);
-              setCurrentRoute('/cars');
-            }}
+            onBack={() => (window.history.state?.app ? window.history.back() : navigateTo('/cars'))}
             onSelectCar={handleSelectCar}
           />
         ) : (

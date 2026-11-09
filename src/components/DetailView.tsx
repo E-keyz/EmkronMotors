@@ -29,7 +29,8 @@ export const DetailView: React.FC<DetailViewProps> = ({
   const whatsappUrl = generateWhatsAppLink(
     car.seller.whatsapp,
     car.title,
-    car.price
+    car.price,
+    window.location.href
   );
 
   const handleShare = () => {

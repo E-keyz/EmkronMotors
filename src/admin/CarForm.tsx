@@ -16,38 +16,62 @@ const field =
 const lbl = 'block text-[11px] font-bold uppercase text-slate-400 mb-1';
 const card = 'bg-white rounded-3xl border border-slate-200 p-5 sm:p-6 shadow-sm';
 
+// An unsaved "new car" is kept in the browser so a reload, a closed tab or a phone
+// reclaiming the page never loses what was typed (photos are already uploaded).
+const DRAFT_KEY = 'emkron-admin-new-car-draft';
+type Draft = Record<string, any>; // eslint-disable-line @typescript-eslint/no-explicit-any
+const loadDraft = (): Draft | null => {
+  try { return JSON.parse(localStorage.getItem(DRAFT_KEY) || 'null'); } catch { return null; }
+};
+const clearDraft = () => { try { localStorage.removeItem(DRAFT_KEY); } catch { /* ignore */ } };
+
 export function CarForm({ editId, onDone }: Props) {
   const isEdit = Boolean(editId);
   // New cars get their id up front so photos can be stored in that car's folder.
-  const carId = useRef(editId || crypto.randomUUID()).current;
+  const draft = useRef<Draft | null>(editId ? null : loadDraft()).current;
+  const d: Draft = draft ?? {};
+  const carId = useRef<string>(editId || d.carId || crypto.randomUUID()).current;
 
   const [loading, setLoading] = useState(isEdit);
   const [saving, setSaving] = useState(false);
   const [uploading, setUploading] = useState(0);
   const [error, setError] = useState('');
 
-  const [brand, setBrand] = useState('');
-  const [model, setModel] = useState('');
-  const [year, setYear] = useState(String(new Date().getFullYear() - 5));
-  const [title, setTitle] = useState('');
-  const [price, setPrice] = useState('');
-  const [condition, setCondition] = useState<ListingRow['condition']>('Foreign Used');
-  const [category, setCategory] = useState('Sedan');
-  const [transmission, setTransmission] = useState('Automatic');
-  const [fuel, setFuel] = useState('Petrol');
-  const [color, setColor] = useState('');
-  const [mileage, setMileage] = useState('');
-  const [mileageUnit, setMileageUnit] = useState<'km' | 'miles'>('km');
-  const [state, setState] = useState('Abuja (FCT)');
-  const [area, setArea] = useState('');
-  const [vin, setVin] = useState('');
-  const [description, setDescription] = useState('');
-  const [features, setFeatures] = useState('');
-  const [status, setStatus] = useState<AdminStatus>('active');
-  const [featured, setFeatured] = useState(false);
-  const [images, setImages] = useState<string[]>([]);
+  const [brand, setBrand] = useState<string>(d.brand ?? '');
+  const [model, setModel] = useState<string>(d.model ?? '');
+  const [year, setYear] = useState<string>(d.year ?? String(new Date().getFullYear() - 5));
+  const [title, setTitle] = useState<string>(d.title ?? '');
+  const [price, setPrice] = useState<string>(d.price ?? '');
+  const [condition, setCondition] = useState<ListingRow['condition']>(d.condition ?? 'Foreign Used');
+  const [category, setCategory] = useState<string>(d.category ?? 'Sedan');
+  const [transmission, setTransmission] = useState<string>(d.transmission ?? 'Automatic');
+  const [fuel, setFuel] = useState<string>(d.fuel ?? 'Petrol');
+  const [color, setColor] = useState<string>(d.color ?? '');
+  const [mileage, setMileage] = useState<string>(d.mileage ?? '');
+  const [mileageUnit, setMileageUnit] = useState<'km' | 'miles'>(d.mileageUnit ?? 'km');
+  const [state, setState] = useState<string>(d.state ?? 'Abuja (FCT)');
+  const [area, setArea] = useState<string>(d.area ?? '');
+  const [vin, setVin] = useState<string>(d.vin ?? '');
+  const [description, setDescription] = useState<string>(d.description ?? '');
+  const [features, setFeatures] = useState<string>(d.features ?? '');
+  const [status, setStatus] = useState<AdminStatus>(d.status ?? 'active');
+  const [featured, setFeatured] = useState<boolean>(d.featured ?? false);
+  const [images, setImages] = useState<string[]>(d.images ?? []);
   const [original, setOriginal] = useState<{ images: string[]; slug: string | null }>({ images: [], slug: null });
-  const added = useRef<string[]>([]);
+  // Photos uploaded in this session (including a restored draft's) that aren't saved to a car yet.
+  const added = useRef<string[]>(d.images ?? []);
+  const restored = Boolean(draft && (draft.brand || draft.model || draft.price || (draft.images && draft.images.length)));
+
+  useEffect(() => {
+    if (isEdit) return;
+    try {
+      localStorage.setItem(DRAFT_KEY, JSON.stringify({
+        carId, brand, model, year, title, price, condition, category, transmission, fuel, color,
+        mileage, mileageUnit, state, area, vin, description, features, status, featured, images,
+      }));
+    } catch { /* storage full or blocked: ignore */ }
+  }, [isEdit, carId, brand, model, year, title, price, condition, category, transmission, fuel, color,
+      mileage, mileageUnit, state, area, vin, description, features, status, featured, images]);
 
   useEffect(() => {
     if (!editId) return;
@@ -98,6 +122,7 @@ export function CarForm({ editId, onDone }: Props) {
   const cancel = async () => {
     // Throw away photos uploaded in this session that were never saved.
     if (added.current.length) await deleteCarImages(added.current);
+    clearDraft();
     onDone();
   };
 
@@ -142,6 +167,7 @@ export function CarForm({ editId, onDone }: Props) {
     // Clean up photos that were removed, and any uploaded-then-removed this session.
     const removed = [...original.images, ...added.current].filter((u) => !images.includes(u));
     if (removed.length) await deleteCarImages(removed);
+    clearDraft();
     onDone();
   };
 
@@ -155,7 +181,9 @@ export function CarForm({ editId, onDone }: Props) {
       <button onClick={cancel} className="inline-flex items-center gap-1 text-sm font-bold text-slate-600 hover:text-emerald-700 mb-4 cursor-pointer">
         <ChevronLeft className="w-4 h-4" /> Back to cars
       </button>
-      <h1 className="text-2xl sm:text-3xl font-extrabold tracking-tight text-slate-900 mb-6">{isEdit ? 'Edit car' : 'Add a car'}</h1>
+      <h1 className="text-2xl sm:text-3xl font-extrabold tracking-tight text-slate-900 mb-2">{isEdit ? 'Edit car' : 'Add a car'}</h1>
+      {restored && <p className="text-xs font-semibold text-emerald-700 mb-4">Your unsaved draft was restored. Press Cancel to discard it.</p>}
+      <div className="mb-4" />
 
       <form onSubmit={save} className="space-y-6">
         <section className={card}>
